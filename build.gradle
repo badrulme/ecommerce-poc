@@ -24,8 +24,8 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-	implementation 'com.linecorp.bot:line-bot-api-client'
-	implementation 'com.linecorp.bot:line-bot-model'
+	implementation 'com.linecorp.bot:line-bot-api-client:6.0.0'
+	implementation 'com.linecorp.bot:line-bot-model:6.0.0'
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'com.mysql:mysql-connector-j'
