@@ -3,6 +3,8 @@ package com.badrul.ecommercepoc.model;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Setter
 @Getter
 public class ProductResponse {
@@ -14,7 +16,10 @@ public class ProductResponse {
 
     private String description;
 
-    private Double price;
+    private BigDecimal price;
 
+    private String productImageUrl;
+
+    private int rating;
 
 }

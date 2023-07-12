@@ -5,12 +5,16 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.math.BigDecimal;
 
 @Setter
 @Getter
 @Entity
+@Table(name = "product")
 public class ProductEntity {
 
     @Id
@@ -20,11 +24,16 @@ public class ProductEntity {
     @Column(length = 50, nullable = false, unique = true)
     private String code;
 
-    @Column( nullable = false)
+    @Column(nullable = false)
     private String title;
 
     private String description;
 
     @Column(nullable = false)
-    private Double price;
+    private BigDecimal price;
+
+    private int rating;
+
+    @Column(length = 2000)
+    private String productImageUrl;
 }

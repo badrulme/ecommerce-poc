@@ -49,11 +49,13 @@ public class ProductService {
         entity.setTitle(request.getTitle());
         entity.setDescription(request.getDescription());
         entity.setPrice(request.getPrice());
+        entity.setProductImageUrl(request.getProductImageUrl());
+        entity.setRating(request.getRating());
 
         return entity;
     }
 
-    private ProductEntity getProductEntity(Long id) {
+    public ProductEntity getProductEntity(Long id) {
         return repository.getReferenceById(id);
     }
 
@@ -65,6 +67,8 @@ public class ProductService {
         response.setTitle(entity.getTitle());
         response.setDescription(entity.getDescription());
         response.setPrice(entity.getPrice());
+        response.setProductImageUrl(entity.getProductImageUrl());
+        response.setRating(entity.getRating());
 
         return response;
     }
