@@ -5,15 +5,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import jakarta.persistence.Temporal;
-import jakarta.persistence.TemporalType;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.Date;
+import java.util.List;
 
 /**
  * Line Reservation entity
@@ -42,4 +41,8 @@ public class LineReservationEntity implements Serializable {
 
     @Column(name = "reservation_completed", nullable = false)
     private boolean reservationCompleted = false;
+
+    @OneToMany(mappedBy = "reservation")
+    private List<LineReservationItemEntity> lineReservationItems;
+
 }

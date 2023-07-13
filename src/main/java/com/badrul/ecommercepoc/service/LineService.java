@@ -2,6 +2,9 @@ package com.badrul.ecommercepoc.service;
 
 import com.badrul.ecommercepoc.entity.LineConfigEntity;
 import com.badrul.ecommercepoc.entity.LineReservationEntity;
+import com.badrul.ecommercepoc.entity.LineReservationItemEntity;
+import com.badrul.ecommercepoc.enums.LineEventType;
+import com.badrul.ecommercepoc.enums.LineProductOrderStep;
 import com.badrul.ecommercepoc.exception.WebhookParseException;
 import com.badrul.ecommercepoc.model.ProductResponse;
 import com.badrul.ecommercepoc.repository.LineConfigRepository;
@@ -35,6 +38,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 
@@ -45,6 +49,7 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 
@@ -106,23 +111,41 @@ public class LineService {
                     String userId = event.getSource().getUserId();
                     String userMessageReplyToken = ((MessageEvent<?>) event).getReplyToken();
 
-//                    LineReservationEntity lineReservation = lineReservationRepository.
-//                            findFirstByBotUserIdAndUserIdOrderByIdDesc(botUserId, userId);
+                    LineReservationEntity lineReservation = lineReservationRepository.
+                            findFirstByBotUserIdAndUserIdAndUserIdAndReservationCompleted_FalseOrderByIdDesc(botUserId, userId);
 
-//                    if (!ObjectUtils.isEmpty(lineReservation)) {
-                    MessageEvent messageEvent = (MessageEvent) event;
-                    if (messageEvent.getMessage() instanceof TextMessageContent) {
-                        String userMessage = ((TextMessageContent) messageEvent.getMessage()).getText();
-                        sendReplyTextMessage(client, userMessage, userMessageReplyToken);
+                    if (!ObjectUtils.isEmpty(lineReservation)) {
+                        MessageEvent messageEvent = (MessageEvent) event;
+                        if (messageEvent.getMessage() instanceof TextMessageContent) {
+                            String userMessage = ((TextMessageContent) messageEvent.getMessage()).getText();
+
+                            LineReservationItemEntity reservationItem = lineReservationItemRepository
+                                    .findFirstByReservationIdOrderByIdDesc(lineReservation.getId());
+
+                            if (!ObjectUtils.isEmpty(reservationItem)) {
+                                if (StringUtils.hasText(userMessage)) {
+                                    // todo
+                                } else {
+                                    if (reservationItem.getLineProductOrderStep().equals(LineProductOrderStep.PRODUCT_SELECTED)) {
+                                        // todo send promt for order confirmation
+                                        sendReplyTextMessage(client, "Received your, will inform you after reviewing the order", userMessageReplyToken);
+
+                                    } else {
+                                        sendReplyTextMessage(client, "Enter your delivery address", userMessageReplyToken);
+
+                                    }
+                                }
+                            }
+
+                        }
                     }
-//                    }
                 } else if (event instanceof PostbackEvent) {
-                    String postBackContent = ((PostbackEvent) event).getPostbackContent().getData();
-                    // Start new Reservation event
+                    PostbackEvent postbackEvent = ((PostbackEvent) event);
+                    String postBackContent = postbackEvent.getPostbackContent().getData();
+                    // Start new Order event
                     if (StringUtils.hasText(postBackContent)) {
                         if (postBackContent.equals("startNewOrder")) {
                             try {
-
                                 LineReservationEntity lineReservation = new LineReservationEntity();
 
                                 lineReservation.setCreateDate(LocalDateTime.now());
@@ -139,9 +162,31 @@ public class LineService {
                                 log.error("PostbackEvent for exception. ", e);
                             }
                         } else if (postBackContent.startsWith("productAddToCart")) {
+                            System.out.println(postBackContent);
                             String[] postbackItems = postBackContent.split("&");
+                            System.out.println(Arrays.toString(postbackItems));
                             Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
                             Long productId = Long.valueOf(postbackItems[2].replace("productId=", ""));
+
+                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+                            itemEntity.setOrderQuantity(1);
+                            itemEntity.setProduct(productService.getProductEntity(productId));
+                            itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
+                            itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
+                            itemEntity.setLineEventType(LineEventType.POSTBACK);
+                            itemEntity.setLineTextMessage(postBackContent);
+                            itemEntity.setLineProductOrderStep(LineProductOrderStep.PRODUCT_SELECTED);
+                            itemEntity.setCreateDate(LocalDateTime.now());
+                            itemEntity.setUserId(event.getSource().getUserId());
+
+                            lineReservationItemRepository.save(itemEntity);
+
+                            sendReplyTextMessage(client,
+                                    "Enter delivery address",
+                                    postbackEvent.getReplyToken()
+                            );
+
                         }
 
                     }
@@ -306,9 +351,9 @@ public class LineService {
                                             .action(
                                                     PostbackAction.builder()
                                                             .label("Add to Cart")
-                                                            .data("productAddToCart&" +
-                                                                    "reservationId=" + reservationId +
-                                                                    "productId=" + product.getId()
+                                                            .data("productAddToCart" +
+                                                                    "&reservationId=" + reservationId +
+                                                                    "&productId=" + product.getId()
                                                             )
                                                             .build()
                                             )

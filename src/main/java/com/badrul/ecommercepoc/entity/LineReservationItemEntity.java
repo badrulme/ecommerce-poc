@@ -1,11 +1,14 @@
 package com.badrul.ecommercepoc.entity;
 
+import com.badrul.ecommercepoc.enums.LineEventType;
+import com.badrul.ecommercepoc.enums.LineProductOrderStep;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Temporal;
@@ -13,7 +16,9 @@ import jakarta.persistence.TemporalType;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDateTime;
 import java.util.Date;
 
 /**
@@ -26,6 +31,7 @@ import java.util.Date;
 @Setter
 @Getter
 public class LineReservationItemEntity implements Serializable {
+    @Serial
     private static final long serialVersionUID = 1L;
 
     @Id
@@ -33,11 +39,12 @@ public class LineReservationItemEntity implements Serializable {
     private Long id;
 
     @Column(name = "create_date", nullable = false)
-    @Temporal(TemporalType.TIMESTAMP)
-    private Date createDate;
+    private LocalDateTime createDate;
 
-    @Column(name = "reservation_id")
-    private Long reservationId;
+    private Integer orderQuantity;
+
+    @ManyToOne
+    private ProductEntity product;
 
     @ManyToOne
     private LineReservationEntity reservation;
@@ -48,9 +55,12 @@ public class LineReservationItemEntity implements Serializable {
     @Column(name = "line_text_message", nullable = false, length = 250)
     private String lineTextMessage;
 
-    @Column(name = "message_step_no")
-    private Integer messageStepNo;
+    @Enumerated(EnumType.STRING)
+    private LineProductOrderStep lineProductOrderStep;
 
     @Column(name = "user_id", nullable = false, length = 150)
     private String userId;
+
+    @Enumerated(EnumType.STRING)
+    private LineEventType lineEventType;
 }

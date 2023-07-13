@@ -8,4 +8,6 @@ import org.springframework.stereotype.Repository;
 public interface LineReservationRepository extends JpaRepository<LineReservationEntity, Long> {
     LineReservationEntity findFirstByBotUserIdAndUserIdOrderByIdDesc(String botUserId, String userId);
 
+    LineReservationEntity findFirstByBotUserIdAndUserIdAndUserIdAndReservationCompleted_FalseOrderByIdDesc(String botUserId, String userId);
+
 }
