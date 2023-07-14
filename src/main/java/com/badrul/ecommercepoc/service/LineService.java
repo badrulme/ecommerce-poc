@@ -25,6 +25,7 @@ import com.linecorp.bot.model.message.flex.component.Button;
 import com.linecorp.bot.model.message.flex.component.FlexComponent;
 import com.linecorp.bot.model.message.flex.component.Icon;
 import com.linecorp.bot.model.message.flex.component.Image;
+import com.linecorp.bot.model.message.flex.component.Separator;
 import com.linecorp.bot.model.message.flex.component.Text;
 import com.linecorp.bot.model.message.flex.container.Bubble;
 import com.linecorp.bot.model.message.flex.container.Carousel;
@@ -49,7 +50,6 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 
@@ -62,6 +62,9 @@ public class LineService {
     public static final String SIGNATURE_HEADER_NAME = "X-Line-Signature";
     public static final String REVIEW_GOLD_STAR = "https://scdn.line-apps.com/n/channel_devcenter/img/fx/review_gold_star_28.png";
     public static final String REVIEW_GRAY_STAR = "https://scdn.line-apps.com/n/channel_devcenter/img/fx/review_gray_star_28.png";
+
+    public static final String STORE_NAME = "Jashore Boro Bazar";
+    public static final String STORE_LOCATION = "Temporary House, L-1 Kazipur, Jashore";
 
     private final HttpServletRequest request;
     private final ObjectMapper objectMapper;
@@ -112,7 +115,7 @@ public class LineService {
                     String userMessageReplyToken = ((MessageEvent<?>) event).getReplyToken();
 
                     LineReservationEntity lineReservation = lineReservationRepository.
-                            findFirstByBotUserIdAndUserIdAndUserIdAndReservationCompleted_FalseOrderByIdDesc(botUserId, userId);
+                            findFirstByBotUserIdAndUserIdAndReservationCompletedFalseOrderByIdDesc(botUserId, userId);
 
                     if (!ObjectUtils.isEmpty(lineReservation)) {
                         MessageEvent messageEvent = (MessageEvent) event;
@@ -124,17 +127,30 @@ public class LineService {
 
                             if (!ObjectUtils.isEmpty(reservationItem)) {
                                 if (StringUtils.hasText(userMessage)) {
-                                    // todo
-                                } else {
                                     if (reservationItem.getLineProductOrderStep().equals(LineProductOrderStep.PRODUCT_SELECTED)) {
-                                        // todo send promt for order confirmation
-                                        sendReplyTextMessage(client, "Received your, will inform you after reviewing the order", userMessageReplyToken);
+//                                        sendReplyTextMessage(client, "Enter your delivery address", userMessageReplyToken);
+//                                        sendReplyTextMessage(client, "Received your, will inform you after reviewing the order", userMessageReplyToken);
 
-                                    } else {
-                                        sendReplyTextMessage(client, "Enter your delivery address", userMessageReplyToken);
+                                        LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+                                        itemEntity.setReservation(lineReservation);
+                                        itemEntity.setLineMessageId(messageEvent.getMessage().getId());
+                                        itemEntity.setLineEventType(LineEventType.POSTBACK);
+                                        itemEntity.setLineTextMessage(userMessage);
+                                        itemEntity.setLineProductOrderStep(LineProductOrderStep.DELIVERY_ADDRESS_PROVIDED);
+                                        itemEntity.setCreateDate(LocalDateTime.now());
+                                        itemEntity.setUserId(event.getSource().getUserId());
+
+                                        lineReservationItemRepository.save(itemEntity);
+
+                                        sendReplyFlexMessage(client, userMessageReplyToken,
+                                                prepareReceiptForLineOrder(itemEntity.getReservation()));
 
                                     }
+
                                 }
+
+
                             }
 
                         }
@@ -162,9 +178,7 @@ public class LineService {
                                 log.error("PostbackEvent for exception. ", e);
                             }
                         } else if (postBackContent.startsWith("productAddToCart")) {
-                            System.out.println(postBackContent);
                             String[] postbackItems = postBackContent.split("&");
-                            System.out.println(Arrays.toString(postbackItems));
                             Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
                             Long productId = Long.valueOf(postbackItems[2].replace("productId=", ""));
 
@@ -182,8 +196,36 @@ public class LineService {
 
                             lineReservationItemRepository.save(itemEntity);
 
+                            // send Cart items and ask confirmation
                             sendReplyTextMessage(client,
                                     "Enter delivery address",
+                                    postbackEvent.getReplyToken()
+                            );
+
+                        } else if (postBackContent.startsWith("confirmOrder")) {
+                            String[] postbackItems = postBackContent.split("&");
+                            Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
+
+                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+                            LineReservationEntity lineReservationEntity = lineReservationRepository.getReferenceById(reservationId);
+
+                            itemEntity.setReservation(lineReservationEntity);
+                            itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
+                            itemEntity.setLineEventType(LineEventType.POSTBACK);
+                            itemEntity.setLineTextMessage(postBackContent);
+                            itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_CONFIRMED);
+                            itemEntity.setCreateDate(LocalDateTime.now());
+                            itemEntity.setUserId(event.getSource().getUserId());
+
+                            lineReservationItemRepository.save(itemEntity);
+
+                            lineReservationEntity.setReservationCompleted(true);
+                            lineReservationRepository.save(lineReservationEntity);
+
+                            // send Cart items and ask confirmation
+                            sendReplyTextMessage(client,
+                                    "Thanks for placing the order with us. We will contact you soon.",
                                     postbackEvent.getReplyToken()
                             );
 
@@ -390,6 +432,200 @@ public class LineService {
                 .build();
 
         return new FlexMessage("Product list", carousel);
+    }
+
+    private FlexMessage prepareReceiptForLineOrder(LineReservationEntity lineReservationEntity) {
+
+        List<LineReservationItemEntity> itemEntities = lineReservationEntity.getLineReservationItems()
+                .stream().filter(entity -> entity.getProduct() != null).toList();
+
+        List<FlexComponent> productBoxes = new ArrayList<>();
+
+        itemEntities.forEach(entity -> {
+            Text productTitle = Text.builder()
+                    .text("1. " + entity.getProduct().getTitle())
+                    .flex(4)
+                    .size(FlexFontSize.SM)
+                    .color("#555555")
+                    .build();
+
+            Text productPrice = Text.builder()
+                    .text("৳ " + entity.getProduct().getPrice())
+                    .size(FlexFontSize.SM)
+                    .flex(2)
+                    .color("#111111")
+                    .align(FlexAlign.END)
+                    .build();
+
+            productBoxes.add(Box.builder()
+                    .layout(FlexLayout.HORIZONTAL)
+                    .contents(productTitle, productPrice)
+                    .build());
+        });
+
+        Text receiptText = Text.builder()
+                .text("Order Summary")
+                .size(FlexFontSize.SM)
+                .color("#1DB446")
+                .weight(Text.TextWeight.BOLD)
+                .build();
+
+
+        Text orderNoText = Text.builder()
+                .text("#743289384279")
+                .size(FlexFontSize.XS)
+                .color("#aaaaaa")
+                .weight(Text.TextWeight.BOLD)
+                .build();
+
+
+        Text storeName = Text.builder()
+                .text(STORE_NAME)
+                .margin(FlexMarginSize.SM)
+                .size(FlexFontSize.Md)
+                .weight(Text.TextWeight.BOLD)
+                .build();
+
+        Text storeLocation = Text.builder()
+                .text(STORE_LOCATION)
+                .size(FlexFontSize.XS)
+                .color("#aaaaaa")
+                .wrap(true)
+                .build();
+
+        Separator separatorXXL = Separator.builder().margin(FlexMarginSize.XXL).build();
+
+//        // Product list
+//        Text productTitle = Text.builder()
+//                .text("Energy Drink")
+//                .flex(0)
+//                .size(FlexFontSize.SM)
+//                .color("#555555")
+//                .build();
+//
+//        Text productPrice = Text.builder()
+//                .text("$2.99")
+//                .size(FlexFontSize.SM)
+//                .color("#111111")
+//                .align(FlexAlign.END)
+//                .build();
+//
+//        Box productBox1 = Box.builder()
+//                .layout(FlexLayout.HORIZONTAL)
+//                .contents(productTitle, productPrice)
+//                .build();
+//
+//        Box productBox2 = Box.builder()
+//                .layout(FlexLayout.HORIZONTAL)
+//                .contents(productTitle, productPrice)
+//                .build();
+//
+//        Box productBox3 = Box.builder()
+//                .layout(FlexLayout.HORIZONTAL)
+//                .contents(productTitle, productPrice)
+//                .build();
+
+        // Items count
+//        Text itemsText = Text.builder()
+//                .text("ITEMS")
+//                .flex(0)
+//                .size(FlexFontSize.SM)
+//                .color("#555555")
+//                .build();
+//
+//        Text itemsCount = Text.builder()
+//                .text("$2.99")
+//                .size(FlexFontSize.SM)
+//                .color("#111111")
+//                .align(FlexAlign.END)
+//                .build();
+//
+//        Box itemCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(itemsText, itemsCount).build();
+//
+//        // Total
+//        Text totalText = Text.builder()
+//                .text("ITEMS")
+//                .flex(0)
+//                .size(FlexFontSize.SM)
+//                .color("#555555")
+//                .build();
+//
+//        Text totalCount = Text.builder()
+//                .text("$2.99")
+//                .size(FlexFontSize.SM)
+//                .color("#111111")
+//                .align(FlexAlign.END)
+//                .build();
+//
+//        Box totalCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(totalText, totalCount).build();
+//
+//        // DUE
+//        Text dueText = Text.builder()
+//                .text("DUE")
+//                .flex(0)
+//                .size(FlexFontSize.SM)
+//                .color("#555555")
+//                .build();
+//
+//        Text dueCount = Text.builder()
+//                .text("$8.0")
+//                .size(FlexFontSize.SM)
+//                .color("#111111")
+//                .align(FlexAlign.END)
+//                .build();
+//
+//        Box dueCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(dueText, dueCount).build();
+
+        // Shipping
+        Text shippingTitle = Text.builder()
+                .text("Shipping Address")
+                .size(FlexFontSize.SM)
+                .color("#555555")
+                .build();
+
+        Text shippingAddress = Text.builder()
+                .size(FlexFontSize.SM)
+                .text("Dhaka, Bangladesh")
+                .color("#111111")
+                .wrap(true)
+                .build();
+
+        Box shippingBox = Box.builder().margin(FlexMarginSize.SM)
+                .layout(FlexLayout.VERTICAL).contents(shippingTitle, shippingAddress).build();
+
+        productBoxes.add(separatorXXL);
+//        productBoxes.add(itemCountBox);
+//        productBoxes.add(totalCountBox);
+//        productBoxes.add(dueCountBox);
+        Box itemBox = Box.builder()
+                .layout(FlexLayout.VERTICAL)
+                .spacing(FlexMarginSize.SM)
+                .margin(FlexMarginSize.XXL)
+                .contents(productBoxes)
+                .build();
+
+        FlexComponent orderConfirmButton = Button.builder()
+                .height(Button.ButtonHeight.MEDIUM)
+                .style(Button.ButtonStyle.PRIMARY)
+                .margin(FlexMarginSize.LG)
+                .action(
+                        PostbackAction.builder()
+                                .label("Confirm")
+                                .data("confirmOrder&reservationId=" + lineReservationEntity.getId())
+                                .build()
+                )
+                .build();
+
+        Box bodyBox = Box.builder()
+                .layout(FlexLayout.VERTICAL)
+                .contents(receiptText, orderNoText, storeName, storeLocation, separatorXXL, itemBox,
+                        separatorXXL, shippingBox,
+                        orderConfirmButton).build();
+
+        Bubble bubble = Bubble.builder().size(Bubble.BubbleSize.KILO).body(bodyBox).build();
+
+
+        return new FlexMessage("Order Summary", bubble);
     }
 
 }
