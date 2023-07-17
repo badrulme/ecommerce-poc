@@ -45,6 +45,7 @@ import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -52,6 +53,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -127,9 +129,42 @@ public class LineService {
 
                             if (!ObjectUtils.isEmpty(reservationItem)) {
                                 if (StringUtils.hasText(userMessage)) {
-                                    if (reservationItem.getLineProductOrderStep().equals(LineProductOrderStep.PRODUCT_SELECTED)) {
-//                                        sendReplyTextMessage(client, "Enter your delivery address", userMessageReplyToken);
-//                                        sendReplyTextMessage(client, "Received your, will inform you after reviewing the order", userMessageReplyToken);
+
+                                    // Event:: Quantity
+                                    if (reservationItem.getLineProductOrderStep()
+                                            .equals(LineProductOrderStep.PRODUCT_SELECTED)) {
+
+                                        if (!userMessage.trim().matches("\\d+")) {
+                                            sendReplyTextMessage(client,
+                                                    "Enter order quantity", userMessageReplyToken);
+                                        } else {
+                                            sendReplyTextMessage(client,
+                                                    "Enter shipping address", userMessageReplyToken);
+                                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+                                            itemEntity.setOrderQuantity(Integer.parseInt(userMessage));
+                                            itemEntity.setReservation(lineReservation);
+                                            itemEntity.setLineMessageId(messageEvent.getMessage().getId());
+                                            itemEntity.setLineEventType(LineEventType.POSTBACK);
+                                            itemEntity.setLineTextMessage(userMessage);
+                                            itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
+                                            itemEntity.setCreateDate(LocalDateTime.now());
+                                            itemEntity.setUserId(event.getSource().getUserId());
+
+                                            lineReservationItemRepository.save(itemEntity);
+                                        }
+
+
+                                    }
+
+                                    // Event:: Shipping Address
+                                    if (reservationItem.getLineProductOrderStep()
+                                            .equals(LineProductOrderStep.ORDER_QUANTITY_PROVIDED)) {
+
+                                        // todo delivery validation
+
+                                        sendReplyFlexMessage(client, userMessageReplyToken,
+                                                prepareReceiptForLineOrder(lineReservation));
 
                                         LineReservationItemEntity itemEntity = new LineReservationItemEntity();
 
@@ -143,14 +178,8 @@ public class LineService {
 
                                         lineReservationItemRepository.save(itemEntity);
 
-                                        sendReplyFlexMessage(client, userMessageReplyToken,
-                                                prepareReceiptForLineOrder(itemEntity.getReservation()));
-
                                     }
-
                                 }
-
-
                             }
 
                         }
@@ -158,7 +187,7 @@ public class LineService {
                 } else if (event instanceof PostbackEvent) {
                     PostbackEvent postbackEvent = ((PostbackEvent) event);
                     String postBackContent = postbackEvent.getPostbackContent().getData();
-                    // Start new Order event
+                    // Event:: Start to create new Order
                     if (StringUtils.hasText(postBackContent)) {
                         if (postBackContent.equals("startNewOrder")) {
                             try {
@@ -172,19 +201,27 @@ public class LineService {
                                 Long reservationId = lineReservationRepository.saveAndFlush(lineReservation).getId();
 
                                 sendReplyFlexMessage(client, ((PostbackEvent) event).getReplyToken(),
-                                        prepareProductListMessage(reservationId));
+                                        prepareProductListMessage(reservationId)
+                                );
 
                             } catch (Exception e) {
-                                log.error("PostbackEvent for exception. ", e);
+                                log.error("PostbackEvent for create new Order. ", e);
                             }
-                        } else if (postBackContent.startsWith("productAddToCart")) {
+                        }
+                        // Event:: Start to create new Order
+                        else if (postBackContent.startsWith("placeOrder")) {
                             String[] postbackItems = postBackContent.split("&");
                             Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
                             Long productId = Long.valueOf(postbackItems[2].replace("productId=", ""));
 
+                            // send Cart items and ask confirmation
+                            sendReplyTextMessage(client,
+                                    "Enter order quantity",
+                                    postbackEvent.getReplyToken()
+                            );
+
                             LineReservationItemEntity itemEntity = new LineReservationItemEntity();
 
-                            itemEntity.setOrderQuantity(1);
                             itemEntity.setProduct(productService.getProductEntity(productId));
                             itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
                             itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
@@ -196,15 +233,17 @@ public class LineService {
 
                             lineReservationItemRepository.save(itemEntity);
 
-                            // send Cart items and ask confirmation
-                            sendReplyTextMessage(client,
-                                    "Enter delivery address",
-                                    postbackEvent.getReplyToken()
-                            );
+
 
                         } else if (postBackContent.startsWith("confirmOrder")) {
                             String[] postbackItems = postBackContent.split("&");
                             Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
+
+                            // send Cart items and ask confirmation
+                            sendReplyTextMessage(client,
+                                    "Thanks for placing the order with us. We will contact you soon.",
+                                    postbackEvent.getReplyToken()
+                            );
 
                             LineReservationItemEntity itemEntity = new LineReservationItemEntity();
 
@@ -222,13 +261,6 @@ public class LineService {
 
                             lineReservationEntity.setReservationCompleted(true);
                             lineReservationRepository.save(lineReservationEntity);
-
-                            // send Cart items and ask confirmation
-                            sendReplyTextMessage(client,
-                                    "Thanks for placing the order with us. We will contact you soon.",
-                                    postbackEvent.getReplyToken()
-                            );
-
                         }
 
                     }
@@ -392,8 +424,8 @@ public class LineService {
                                             .style(Button.ButtonStyle.PRIMARY)
                                             .action(
                                                     PostbackAction.builder()
-                                                            .label("Add to Cart")
-                                                            .data("productAddToCart" +
+                                                            .label("Place Order")
+                                                            .data("placeOrder" +
                                                                     "&reservationId=" + reservationId +
                                                                     "&productId=" + product.getId()
                                                             )
@@ -441,7 +473,18 @@ public class LineService {
 
         List<FlexComponent> productBoxes = new ArrayList<>();
 
+        LineReservationItemEntity itemEntity = lineReservationItemRepository
+                .findByReservation_IdAndLineProductOrderStep(lineReservationEntity.getId(),
+                        LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
+
+        int orderQuantity = itemEntity.getOrderQuantity();
+
+        AtomicReference<BigDecimal> productRate = new AtomicReference<>(BigDecimal.ZERO);
+
         itemEntities.forEach(entity -> {
+
+            productRate.set(entity.getProduct().getPrice());
+
             Text productTitle = Text.builder()
                     .text("1. " + entity.getProduct().getTitle())
                     .flex(4)
@@ -495,86 +538,39 @@ public class LineService {
 
         Separator separatorXXL = Separator.builder().margin(FlexMarginSize.XXL).build();
 
-//        // Product list
-//        Text productTitle = Text.builder()
-//                .text("Energy Drink")
-//                .flex(0)
-//                .size(FlexFontSize.SM)
-//                .color("#555555")
-//                .build();
-//
-//        Text productPrice = Text.builder()
-//                .text("$2.99")
-//                .size(FlexFontSize.SM)
-//                .color("#111111")
-//                .align(FlexAlign.END)
-//                .build();
-//
-//        Box productBox1 = Box.builder()
-//                .layout(FlexLayout.HORIZONTAL)
-//                .contents(productTitle, productPrice)
-//                .build();
-//
-//        Box productBox2 = Box.builder()
-//                .layout(FlexLayout.HORIZONTAL)
-//                .contents(productTitle, productPrice)
-//                .build();
-//
-//        Box productBox3 = Box.builder()
-//                .layout(FlexLayout.HORIZONTAL)
-//                .contents(productTitle, productPrice)
-//                .build();
-
         // Items count
-//        Text itemsText = Text.builder()
-//                .text("ITEMS")
-//                .flex(0)
-//                .size(FlexFontSize.SM)
-//                .color("#555555")
-//                .build();
-//
-//        Text itemsCount = Text.builder()
-//                .text("$2.99")
-//                .size(FlexFontSize.SM)
-//                .color("#111111")
-//                .align(FlexAlign.END)
-//                .build();
-//
-//        Box itemCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(itemsText, itemsCount).build();
-//
-//        // Total
-//        Text totalText = Text.builder()
-//                .text("ITEMS")
-//                .flex(0)
-//                .size(FlexFontSize.SM)
-//                .color("#555555")
-//                .build();
-//
-//        Text totalCount = Text.builder()
-//                .text("$2.99")
-//                .size(FlexFontSize.SM)
-//                .color("#111111")
-//                .align(FlexAlign.END)
-//                .build();
-//
-//        Box totalCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(totalText, totalCount).build();
-//
-//        // DUE
-//        Text dueText = Text.builder()
-//                .text("DUE")
-//                .flex(0)
-//                .size(FlexFontSize.SM)
-//                .color("#555555")
-//                .build();
-//
-//        Text dueCount = Text.builder()
-//                .text("$8.0")
-//                .size(FlexFontSize.SM)
-//                .color("#111111")
-//                .align(FlexAlign.END)
-//                .build();
-//
-//        Box dueCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(dueText, dueCount).build();
+        Text itemsText = Text.builder()
+                .text("ITEMS")
+                .flex(0)
+                .size(FlexFontSize.SM)
+                .color("#555555")
+                .build();
+
+        Text itemsCount = Text.builder()
+                .text(String.valueOf(orderQuantity))
+                .size(FlexFontSize.SM)
+                .color("#111111")
+                .align(FlexAlign.END)
+                .build();
+
+        Box itemCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(itemsText, itemsCount).build();
+
+        // Total
+        Text totalText = Text.builder()
+                .text("TOTAL")
+                .flex(0)
+                .size(FlexFontSize.SM)
+                .color("#555555")
+                .build();
+
+        Text totalCount = Text.builder()
+                .text("৳ " + BigDecimal.valueOf(orderQuantity).multiply(productRate.get()))
+                .size(FlexFontSize.SM)
+                .color("#111111")
+                .align(FlexAlign.END)
+                .build();
+
+        Box totalCountBox = Box.builder().layout(FlexLayout.HORIZONTAL).contents(totalText, totalCount).build();
 
         // Shipping
         Text shippingTitle = Text.builder()
@@ -594,9 +590,10 @@ public class LineService {
                 .layout(FlexLayout.VERTICAL).contents(shippingTitle, shippingAddress).build();
 
         productBoxes.add(separatorXXL);
-//        productBoxes.add(itemCountBox);
-//        productBoxes.add(totalCountBox);
+        productBoxes.add(itemCountBox);
+        productBoxes.add(totalCountBox);
 //        productBoxes.add(dueCountBox);
+
         Box itemBox = Box.builder()
                 .layout(FlexLayout.VERTICAL)
                 .spacing(FlexMarginSize.SM)
