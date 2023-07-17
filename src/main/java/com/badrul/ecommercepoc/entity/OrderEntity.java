@@ -8,9 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -30,11 +28,11 @@ public class OrderEntity {
     @Column(length = 50, nullable = false, unique = true)
     private String code;
 
-    @OneToOne
-    @JoinColumn(name = "product_id")
-    private ProductEntity product;
+    private Long productId;
 
     private BigDecimal amount;
+
+    private Integer quantity;
 
     @Enumerated(EnumType.STRING)
     private OrderFrom orderFrom;
@@ -47,7 +45,7 @@ public class OrderEntity {
     private String customerName;
 
     @Column(length = 30)
-    private String mobileNo;
+    private String contactNo;
 
 
 }

@@ -5,7 +5,9 @@ import com.badrul.ecommercepoc.entity.LineReservationEntity;
 import com.badrul.ecommercepoc.entity.LineReservationItemEntity;
 import com.badrul.ecommercepoc.enums.LineEventType;
 import com.badrul.ecommercepoc.enums.LineProductOrderStep;
+import com.badrul.ecommercepoc.enums.OrderFrom;
 import com.badrul.ecommercepoc.exception.WebhookParseException;
+import com.badrul.ecommercepoc.model.OrderRequest;
 import com.badrul.ecommercepoc.model.ProductResponse;
 import com.badrul.ecommercepoc.repository.LineConfigRepository;
 import com.badrul.ecommercepoc.repository.LineReservationItemRepository;
@@ -75,6 +77,7 @@ public class LineService {
     private final LineReservationRepository lineReservationRepository;
     private final LineReservationItemRepository lineReservationItemRepository;
     private final ProductService productService;
+    private final OrderService orderService;
 
     public void handleLineWebhookRequest() {
         log.info("*** Class: LineChatBotController ***");
@@ -176,7 +179,7 @@ public class LineService {
                                         itemEntity.setCreateDate(LocalDateTime.now());
                                         itemEntity.setUserId(event.getSource().getUserId());
 
-                                        lineReservationItemRepository.save(itemEntity);
+                                        lineReservationItemRepository.saveAndFlush(itemEntity);
 
                                     }
                                 }
@@ -261,6 +264,34 @@ public class LineService {
 
                             lineReservationEntity.setReservationCompleted(true);
                             lineReservationRepository.save(lineReservationEntity);
+
+                            List<LineReservationItemEntity> itemEntities = lineReservationEntity.getLineReservationItems()
+                                    .stream().filter(entity -> entity.getProduct() != null).toList();
+
+                            AtomicReference<BigDecimal> productRate = new AtomicReference<>(BigDecimal.ZERO);
+
+                            AtomicReference<Long> itemIdAtomicReference = new AtomicReference<>();
+                            itemEntities.forEach(entity -> {
+
+                                productRate.set(entity.getProduct().getPrice());
+                                itemIdAtomicReference.set(entity.getId());
+                            });
+
+
+                            LineReservationItemEntity item = lineReservationItemRepository
+                                    .findByReservation_IdAndLineProductOrderStep(lineReservationEntity.getId(),
+                                            LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
+
+                            OrderRequest orderRequest = new OrderRequest();
+
+                            orderRequest.setOrderFrom(OrderFrom.LINE);
+                            orderRequest.setLineReservationId(reservationId);
+                            orderRequest.setAmount(productRate.get());
+                            orderRequest.setQuantity(item.getOrderQuantity());
+                            orderRequest.setProductId(itemIdAtomicReference.get());
+
+                            orderService.create(orderRequest);
+
                         }
 
                     }
@@ -592,7 +623,6 @@ public class LineService {
         productBoxes.add(separatorXXL);
         productBoxes.add(itemCountBox);
         productBoxes.add(totalCountBox);
-//        productBoxes.add(dueCountBox);
 
         Box itemBox = Box.builder()
                 .layout(FlexLayout.VERTICAL)
