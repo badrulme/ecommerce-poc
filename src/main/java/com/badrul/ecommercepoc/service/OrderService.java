@@ -8,6 +8,8 @@ import com.badrul.ecommercepoc.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,10 +50,13 @@ public class OrderService {
 
     private OrderEntity getOrderEntity(OrderRequest request, OrderEntity entity) {
 
-        entity.setCode(UUID.randomUUID().toString());
+        entity.setDate(LocalDateTime.now());
+        entity.setCode(String.valueOf(new Date().getTime()));
         entity.setOrderFrom(request.getOrderFrom());
         entity.setContactNo(request.getContactNo());
         entity.setShippingAddress(request.getShippingAddress());
+        entity.setOrderAmount(request.getOrderAmount());
+        entity.setOrderQuantity(request.getOrderQuantity());
         entity.setLineReservation(lineReservationRepository.getReferenceById(request.getLineReservationId()));
         entity.setCustomer(customerService.getCustomerEntity(request.getCustomerId()));
 
@@ -69,8 +74,12 @@ public class OrderService {
         response.setId(entity.getId());
         response.setCode(entity.getCode());
         response.setOrderFrom(entity.getOrderFrom());
+        response.setDate(entity.getDate());
         response.setCustomer(customerService.getCustomer(entity.getCustomer()));
         response.setMobileNo(entity.getContactNo());
+        response.setShippingAddress(entity.getShippingAddress());
+        response.setOrderQuantity(entity.getOrderQuantity());
+        response.setOrderAmount(entity.getOrderAmount());
 
         return response;
     }

@@ -14,6 +14,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -29,6 +31,8 @@ public class OrderEntity {
     @Column(length = 50, nullable = false, unique = true)
     private String code;
 
+    private LocalDateTime date;
+
     @Enumerated(EnumType.STRING)
     private OrderFrom orderFrom;
 
@@ -42,6 +46,10 @@ public class OrderEntity {
     private String contactNo;
 
     private String shippingAddress;
+
+    private Integer orderQuantity;
+
+    private BigDecimal orderAmount;
 
     @OneToMany(mappedBy = "order")
     private List<OrderItemEntity> orderItems;

@@ -59,6 +59,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -275,6 +276,11 @@ public class LineService {
         orderRequest.setShippingAddress(lineReservationEntity.getShippingAddress());
         orderRequest.setLineReservationId(lineReservationEntity.getId());
         orderRequest.setCustomerId(getCustomer(client, lineReservationEntity.getUserId()));
+        orderRequest.setOrderAmount(
+                lineReservationEntity.getProduct().getPrice().multiply(BigDecimal.valueOf(lineReservationEntity.getOrderQuantity()))
+        );
+
+        orderRequest.setOrderQuantity(lineReservationEntity.getOrderQuantity());
 
         OrderItemRequest itemRequest = OrderItemRequest.builder()
                 .orderQuantity(lineReservationEntity.getOrderQuantity())
@@ -343,6 +349,7 @@ public class LineService {
         lineReservationRepository.save(lineReservationEntity);
 
         itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
+        itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
         itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
         itemEntity.setLineEventType(LineEventType.POSTBACK);
         itemEntity.setLineTextMessage(postbackEvent.getPostbackContent().getData());
@@ -384,6 +391,7 @@ public class LineService {
             lineReservation.setCreateDate(LocalDateTime.now());
             lineReservation.setBotUserId(botUserId);
             lineReservation.setReservationCompleted(false);
+            lineReservation.setCode(String.valueOf(new Date().getTime()));
             lineReservation.setUserId(event.getSource().getUserId());
 
             Long reservationId = lineReservationRepository.saveAndFlush(lineReservation).getId();
@@ -589,7 +597,7 @@ public class LineService {
 
 
         Text orderNoText = Text.builder()
-                .text("#" + lineReservationEntity.getId())
+                .text("#" + lineReservationEntity.getCode())
                 .size(FlexFontSize.XS)
                 .color("#aaaaaa")
                 .weight(Text.TextWeight.BOLD)

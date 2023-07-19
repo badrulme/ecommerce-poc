@@ -31,6 +31,8 @@ public class LineReservationEntity implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String code;
+
     @Column(name = "create_date", nullable = false)
     private LocalDateTime createDate;
 

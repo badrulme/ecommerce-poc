@@ -1,4 +1,7 @@
 spring:
+  thymeleaf:
+    cache: false
+    suffix: .html
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/ecommerce-poc
@@ -12,4 +15,3 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.MySQLDialect
     show-sql: true
-
