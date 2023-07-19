@@ -28,7 +28,7 @@ public class LineConfigEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
-    private Integer id;
+    private Long id;
 
     @Column(name = "channel_secret", nullable = false, length = 50)
     private String channelSecret;

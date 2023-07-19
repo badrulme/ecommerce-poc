@@ -1,7 +1,6 @@
 package com.badrul.ecommercepoc.service;
 
 import com.badrul.ecommercepoc.entity.OrderEntity;
-import com.badrul.ecommercepoc.enums.OrderFrom;
 import com.badrul.ecommercepoc.model.OrderRequest;
 import com.badrul.ecommercepoc.model.OrderResponse;
 import com.badrul.ecommercepoc.repository.LineReservationRepository;
@@ -10,7 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.random.RandomGenerator;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -18,21 +17,20 @@ public class OrderService {
 
 
     private final OrderRepository repository;
-    private final ProductService productService;
     private final LineReservationRepository lineReservationRepository;
+    private final OrderItemService orderItemService;
+    private final CustomerService customerService;
 
-    public OrderResponse create(OrderRequest request) {
+    public Long create(OrderRequest request) {
+        OrderEntity order = repository.save(getOrderEntity(request, new OrderEntity()));
 
-        return getOrderResponse(repository.save(getOrderEntity(request, new OrderEntity())));
-
+        orderItemService.create(request.getItemRequests(), order);
+        return order.getId();
     }
 
     public OrderResponse change(OrderRequest request, Long id) {
-
         OrderEntity entity = getOrderEntity(id);
-
         return getOrderResponse(repository.save(getOrderEntity(request, entity)));
-
     }
 
     public List<OrderResponse> getAllOrders() {
@@ -50,21 +48,16 @@ public class OrderService {
 
     private OrderEntity getOrderEntity(OrderRequest request, OrderEntity entity) {
 
-        entity.setCode(RandomGenerator.getDefault().toString());
+        entity.setCode(UUID.randomUUID().toString());
         entity.setOrderFrom(request.getOrderFrom());
-        entity.setAmount(request.getAmount());
-        entity.setCustomerName(request.getCustomerName());
         entity.setContactNo(request.getContactNo());
-        entity.setQuantity(request.getQuantity());
+        entity.setShippingAddress(request.getShippingAddress());
+        entity.setLineReservation(lineReservationRepository.getReferenceById(request.getLineReservationId()));
+        entity.setCustomer(customerService.getCustomerEntity(request.getCustomerId()));
 
-        entity.setProductId(request.getProductId());
-
-        if (OrderFrom.LINE.equals(request.getOrderFrom())) {
-            entity.setLineUserId(request.getLineUserId());
-            entity.setLineReservation(lineReservationRepository.getReferenceById(request.getLineReservationId()));
-        }
         return entity;
     }
+
 
     private OrderEntity getOrderEntity(Long id) {
         return repository.getReferenceById(id);
@@ -76,10 +69,8 @@ public class OrderService {
         response.setId(entity.getId());
         response.setCode(entity.getCode());
         response.setOrderFrom(entity.getOrderFrom());
-        response.setAmount(entity.getAmount());
-        response.setCustomerName(entity.getCustomerName());
+        response.setCustomer(customerService.getCustomer(entity.getCustomer()));
         response.setMobileNo(entity.getContactNo());
-        response.setLineUserId(entity.getLineUserId());
 
         return response;
     }

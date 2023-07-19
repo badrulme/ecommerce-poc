@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -39,10 +40,18 @@ public class LineReservationEntity implements Serializable {
     @Column(name = "user_id", nullable = false, length = 150)
     private String userId;
 
+    @OneToOne
+    private ProductEntity product;
+
+    private Integer orderQuantity;
+
+    private String shippingAddress;
+
     @Column(name = "reservation_completed", nullable = false)
     private boolean reservationCompleted = false;
 
     @OneToMany(mappedBy = "reservation")
     private List<LineReservationItemEntity> lineReservationItems;
+
 
 }

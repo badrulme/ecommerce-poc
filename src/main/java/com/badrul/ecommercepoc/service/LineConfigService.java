@@ -7,6 +7,7 @@ import com.badrul.ecommercepoc.repository.LineConfigRepository;
 import com.linecorp.bot.client.LineBlobClient;
 import com.linecorp.bot.client.LineMessagingClient;
 import com.linecorp.bot.model.action.PostbackAction;
+import com.linecorp.bot.model.profile.UserProfileResponse;
 import com.linecorp.bot.model.response.BotApiResponse;
 import com.linecorp.bot.model.richmenu.RichMenu;
 import com.linecorp.bot.model.richmenu.RichMenuArea;
@@ -27,6 +28,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +47,7 @@ import static java.util.Collections.singletonList;
 public class LineConfigService {
     private static final String LINE_BOT_INFO_URL = "https://api.line.me/v2/bot/info";
     private static final String LINE_WEBHOOK_INFO_URL = "https://api.line.me/v2/bot/channel/webhook/endpoint";
+    private static final String LINE_USER_PROFILE_INFO_URL = "https://api.line.me/v2/bot/profile/";
 
     private final LineConfigRepository repository;
     private final RestTemplate restTemplate;
@@ -214,5 +217,19 @@ public class LineConfigService {
             throw new NullPointerException("Webhook endpoint not found:: Line Webhook Info By Channel Access Token exception!");
         }
         return response;
+    }
+
+    public UserProfileResponse getUserProfile(String channelAccessToken, String userId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        headers.add("Authorization", "Bearer " + channelAccessToken);
+
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+
+
+        return restTemplate.exchange(LINE_USER_PROFILE_INFO_URL + userId,
+                HttpMethod.GET, entity, UserProfileResponse.class).getBody();
+
     }
 }

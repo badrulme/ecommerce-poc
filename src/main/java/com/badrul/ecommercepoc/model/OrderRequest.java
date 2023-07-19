@@ -4,27 +4,22 @@ import com.badrul.ecommercepoc.enums.OrderFrom;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
+import java.util.List;
 
 @Setter
 @Getter
 public class OrderRequest {
 
-
-    private Long productId;
-
-    private BigDecimal amount;
-
-    private Integer quantity;
-
     private OrderFrom orderFrom;
-
-    private String lineUserId;
 
     private Long lineReservationId;
 
-    private String customerName;
+    private Long customerId;
 
     private String contactNo;
+
+    private String shippingAddress;
+
+    private List<OrderItemRequest> itemRequests;
 
 }

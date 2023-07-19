@@ -16,13 +16,9 @@ public class OrderResponse {
 
     private Long productId;
 
-    private BigDecimal amount;
-
     private OrderFrom orderFrom;
 
-    private String lineUserId;
-
-    private String customerName;
+    private CustomerResponse customer;
 
     private String mobileNo;
 

@@ -21,10 +21,10 @@ public class OrderItemEntity {
     private Long id;
 
     @ManyToOne
-    private ProductEntity product;
+    private OrderEntity order;
 
     @ManyToOne
-    private LineReservationEntity reservation;
+    private ProductEntity product;
 
     private Integer orderQuantity;
 

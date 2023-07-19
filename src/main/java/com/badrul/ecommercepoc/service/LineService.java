@@ -1,12 +1,16 @@
 package com.badrul.ecommercepoc.service;
 
+import com.badrul.ecommercepoc.entity.CustomerEntity;
 import com.badrul.ecommercepoc.entity.LineConfigEntity;
 import com.badrul.ecommercepoc.entity.LineReservationEntity;
 import com.badrul.ecommercepoc.entity.LineReservationItemEntity;
 import com.badrul.ecommercepoc.enums.LineEventType;
 import com.badrul.ecommercepoc.enums.LineProductOrderStep;
 import com.badrul.ecommercepoc.enums.OrderFrom;
+import com.badrul.ecommercepoc.enums.UserFrom;
 import com.badrul.ecommercepoc.exception.WebhookParseException;
+import com.badrul.ecommercepoc.model.CustomerRequest;
+import com.badrul.ecommercepoc.model.OrderItemRequest;
 import com.badrul.ecommercepoc.model.OrderRequest;
 import com.badrul.ecommercepoc.model.ProductResponse;
 import com.badrul.ecommercepoc.repository.LineConfigRepository;
@@ -36,6 +40,7 @@ import com.linecorp.bot.model.message.flex.unit.FlexFontSize;
 import com.linecorp.bot.model.message.flex.unit.FlexLayout;
 import com.linecorp.bot.model.message.flex.unit.FlexMarginSize;
 import com.linecorp.bot.model.message.flex.unit.FlexOffsetSize;
+import com.linecorp.bot.model.profile.UserProfileResponse;
 import com.linecorp.bot.model.response.BotApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -55,7 +60,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ExecutionException;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -78,6 +83,8 @@ public class LineService {
     private final LineReservationItemRepository lineReservationItemRepository;
     private final ProductService productService;
     private final OrderService orderService;
+    private final CustomerService customerService;
+    private final LineConfigService lineConfigService;
 
     public void handleLineWebhookRequest() {
         log.info("*** Class: LineChatBotController ***");
@@ -117,181 +124,53 @@ public class LineService {
             callbackRequest.getEvents().forEach(event -> {
                 if (event instanceof MessageEvent) {
                     String userId = event.getSource().getUserId();
-                    String userMessageReplyToken = ((MessageEvent<?>) event).getReplyToken();
 
                     LineReservationEntity lineReservation = lineReservationRepository.
                             findFirstByBotUserIdAndUserIdAndReservationCompletedFalseOrderByIdDesc(botUserId, userId);
 
                     if (!ObjectUtils.isEmpty(lineReservation)) {
-                        MessageEvent messageEvent = (MessageEvent) event;
-                        if (messageEvent.getMessage() instanceof TextMessageContent) {
-                            String userMessage = ((TextMessageContent) messageEvent.getMessage()).getText();
+                        MessageEvent<TextMessageContent> messageEvent = (MessageEvent<TextMessageContent>) event;
+                        if (!ObjectUtils.isEmpty(messageEvent.getMessage())) {
+                            String userMessage = messageEvent.getMessage().getText();
 
                             LineReservationItemEntity reservationItem = lineReservationItemRepository
                                     .findFirstByReservationIdOrderByIdDesc(lineReservation.getId());
 
-                            if (!ObjectUtils.isEmpty(reservationItem)) {
-                                if (StringUtils.hasText(userMessage)) {
+                            if (!ObjectUtils.isEmpty(reservationItem) && (StringUtils.hasText(userMessage))) {
 
-                                    // Event:: Quantity
-                                    if (reservationItem.getLineProductOrderStep()
-                                            .equals(LineProductOrderStep.PRODUCT_SELECTED)) {
+                                // Event:: Quantity
+                                if (reservationItem.getLineProductOrderStep()
+                                        .equals(LineProductOrderStep.PRODUCT_SELECTED)) {
 
-                                        if (!userMessage.trim().matches("\\d+")) {
-                                            sendReplyTextMessage(client,
-                                                    "Enter order quantity", userMessageReplyToken);
-                                        } else {
-                                            sendReplyTextMessage(client,
-                                                    "Enter shipping address", userMessageReplyToken);
-                                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
-
-                                            itemEntity.setOrderQuantity(Integer.parseInt(userMessage));
-                                            itemEntity.setReservation(lineReservation);
-                                            itemEntity.setLineMessageId(messageEvent.getMessage().getId());
-                                            itemEntity.setLineEventType(LineEventType.POSTBACK);
-                                            itemEntity.setLineTextMessage(userMessage);
-                                            itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
-                                            itemEntity.setCreateDate(LocalDateTime.now());
-                                            itemEntity.setUserId(event.getSource().getUserId());
-
-                                            lineReservationItemRepository.save(itemEntity);
-                                        }
-
-
-                                    }
-
-                                    // Event:: Shipping Address
-                                    if (reservationItem.getLineProductOrderStep()
-                                            .equals(LineProductOrderStep.ORDER_QUANTITY_PROVIDED)) {
-
-                                        // todo delivery validation
-
-                                        sendReplyFlexMessage(client, userMessageReplyToken,
-                                                prepareReceiptForLineOrder(lineReservation));
-
-                                        LineReservationItemEntity itemEntity = new LineReservationItemEntity();
-
-                                        itemEntity.setReservation(lineReservation);
-                                        itemEntity.setLineMessageId(messageEvent.getMessage().getId());
-                                        itemEntity.setLineEventType(LineEventType.POSTBACK);
-                                        itemEntity.setLineTextMessage(userMessage);
-                                        itemEntity.setLineProductOrderStep(LineProductOrderStep.DELIVERY_ADDRESS_PROVIDED);
-                                        itemEntity.setCreateDate(LocalDateTime.now());
-                                        itemEntity.setUserId(event.getSource().getUserId());
-
-                                        lineReservationItemRepository.saveAndFlush(itemEntity);
-
-                                    }
+                                    saveQuantity(client, messageEvent, userMessage, lineReservation);
                                 }
+
+                                // Event:: Shipping Address
+                                if (reservationItem.getLineProductOrderStep()
+                                        .equals(LineProductOrderStep.ORDER_QUANTITY_PROVIDED)) {
+
+                                    saveShippingAddress(client, messageEvent, userMessage, lineReservation);
+
+                                }
+
                             }
 
                         }
                     }
-                } else if (event instanceof PostbackEvent) {
-                    PostbackEvent postbackEvent = ((PostbackEvent) event);
+                } else if (event instanceof PostbackEvent postbackEvent) {
+
                     String postBackContent = postbackEvent.getPostbackContent().getData();
-                    // Event:: Start to create new Order
+
+                    // Event:: Start to create nfew Order
                     if (StringUtils.hasText(postBackContent)) {
                         if (postBackContent.equals("startNewOrder")) {
-                            try {
-                                LineReservationEntity lineReservation = new LineReservationEntity();
-
-                                lineReservation.setCreateDate(LocalDateTime.now());
-                                lineReservation.setBotUserId(callbackRequest.getDestination());
-                                lineReservation.setReservationCompleted(false);
-                                lineReservation.setUserId(event.getSource().getUserId());
-
-                                Long reservationId = lineReservationRepository.saveAndFlush(lineReservation).getId();
-
-                                sendReplyFlexMessage(client, ((PostbackEvent) event).getReplyToken(),
-                                        prepareProductListMessage(reservationId)
-                                );
-
-                            } catch (Exception e) {
-                                log.error("PostbackEvent for create new Order. ", e);
-                            }
+                            createNewOrder(client, postbackEvent, botUserId);
                         }
                         // Event:: Start to create new Order
                         else if (postBackContent.startsWith("placeOrder")) {
-                            String[] postbackItems = postBackContent.split("&");
-                            Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
-                            Long productId = Long.valueOf(postbackItems[2].replace("productId=", ""));
-
-                            // send Cart items and ask confirmation
-                            sendReplyTextMessage(client,
-                                    "Enter order quantity",
-                                    postbackEvent.getReplyToken()
-                            );
-
-                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
-
-                            itemEntity.setProduct(productService.getProductEntity(productId));
-                            itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
-                            itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
-                            itemEntity.setLineEventType(LineEventType.POSTBACK);
-                            itemEntity.setLineTextMessage(postBackContent);
-                            itemEntity.setLineProductOrderStep(LineProductOrderStep.PRODUCT_SELECTED);
-                            itemEntity.setCreateDate(LocalDateTime.now());
-                            itemEntity.setUserId(event.getSource().getUserId());
-
-                            lineReservationItemRepository.save(itemEntity);
-
-
-
+                            placeOrder(client, postbackEvent);
                         } else if (postBackContent.startsWith("confirmOrder")) {
-                            String[] postbackItems = postBackContent.split("&");
-                            Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
-
-                            // send Cart items and ask confirmation
-                            sendReplyTextMessage(client,
-                                    "Thanks for placing the order with us. We will contact you soon.",
-                                    postbackEvent.getReplyToken()
-                            );
-
-                            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
-
-                            LineReservationEntity lineReservationEntity = lineReservationRepository.getReferenceById(reservationId);
-
-                            itemEntity.setReservation(lineReservationEntity);
-                            itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
-                            itemEntity.setLineEventType(LineEventType.POSTBACK);
-                            itemEntity.setLineTextMessage(postBackContent);
-                            itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_CONFIRMED);
-                            itemEntity.setCreateDate(LocalDateTime.now());
-                            itemEntity.setUserId(event.getSource().getUserId());
-
-                            lineReservationItemRepository.save(itemEntity);
-
-                            lineReservationEntity.setReservationCompleted(true);
-                            lineReservationRepository.save(lineReservationEntity);
-
-                            List<LineReservationItemEntity> itemEntities = lineReservationEntity.getLineReservationItems()
-                                    .stream().filter(entity -> entity.getProduct() != null).toList();
-
-                            AtomicReference<BigDecimal> productRate = new AtomicReference<>(BigDecimal.ZERO);
-
-                            AtomicReference<Long> itemIdAtomicReference = new AtomicReference<>();
-                            itemEntities.forEach(entity -> {
-
-                                productRate.set(entity.getProduct().getPrice());
-                                itemIdAtomicReference.set(entity.getId());
-                            });
-
-
-                            LineReservationItemEntity item = lineReservationItemRepository
-                                    .findByReservation_IdAndLineProductOrderStep(lineReservationEntity.getId(),
-                                            LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
-
-                            OrderRequest orderRequest = new OrderRequest();
-
-                            orderRequest.setOrderFrom(OrderFrom.LINE);
-                            orderRequest.setLineReservationId(reservationId);
-                            orderRequest.setAmount(productRate.get());
-                            orderRequest.setQuantity(item.getOrderQuantity());
-                            orderRequest.setProductId(itemIdAtomicReference.get());
-
-                            orderService.create(orderRequest);
-
+                            confirmOrder(client, postbackEvent);
                         }
 
                     }
@@ -303,6 +182,108 @@ public class LineService {
         } finally {
             log.info("***Function: handleLineWebhookRequest ***");
         }
+    }
+
+    private void saveShippingAddress(LineMessagingClient client,
+                                     MessageEvent<TextMessageContent> event,
+                                     String userMessage,
+                                     LineReservationEntity lineReservation) {
+
+        lineReservation.setShippingAddress(userMessage);
+
+        lineReservationRepository.save(lineReservation);
+
+        sendReplyFlexMessage(client, event.getReplyToken(),
+                prepareReceiptForLineOrder(lineReservation));
+
+        LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+        itemEntity.setReservation(lineReservation);
+        itemEntity.setLineMessageId(event.getMessage().getId());
+        itemEntity.setLineEventType(LineEventType.MESSAGE);
+        itemEntity.setLineTextMessage(userMessage);
+        itemEntity.setLineProductOrderStep(LineProductOrderStep.DELIVERY_ADDRESS_PROVIDED);
+        itemEntity.setCreateDate(LocalDateTime.now());
+        itemEntity.setUserId(event.getSource().getUserId());
+
+        lineReservationItemRepository.saveAndFlush(itemEntity);
+
+    }
+
+    private void saveQuantity(LineMessagingClient client,
+                              MessageEvent<TextMessageContent> messageEvent,
+                              String userMessage,
+                              LineReservationEntity lineReservation) {
+
+        if (!userMessage.trim().matches("\\d+")) {
+            sendReplyTextMessage(client,
+                    "Enter order quantity", messageEvent.getReplyToken());
+        } else {
+            sendReplyTextMessage(client,
+                    "Enter shipping address", messageEvent.getReplyToken());
+
+            LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+            lineReservation.setOrderQuantity(Integer.parseInt(userMessage));
+
+            lineReservationRepository.save(lineReservation);
+
+            itemEntity.setReservation(lineReservation);
+            itemEntity.setLineMessageId(messageEvent.getMessage().getId());
+            itemEntity.setLineEventType(LineEventType.MESSAGE);
+            itemEntity.setLineTextMessage(userMessage);
+            itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
+            itemEntity.setCreateDate(LocalDateTime.now());
+            itemEntity.setUserId(messageEvent.getSource().getUserId());
+
+            lineReservationItemRepository.save(itemEntity);
+        }
+    }
+
+    private void confirmOrder(LineMessagingClient client,
+                              PostbackEvent postbackEvent) {
+        String[] postbackItems = postbackEvent.getPostbackContent().getData().split("&");
+        Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
+
+        // send Cart items and ask confirmation
+        sendReplyTextMessage(client,
+                "Thanks for placing the order with us. We will contact you soon.",
+                postbackEvent.getReplyToken()
+        );
+
+        LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+        LineReservationEntity lineReservationEntity = lineReservationRepository.getReferenceById(reservationId);
+
+        itemEntity.setReservation(lineReservationEntity);
+        itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
+        itemEntity.setLineEventType(LineEventType.POSTBACK);
+        itemEntity.setLineTextMessage(postbackEvent.getPostbackContent().getData());
+        itemEntity.setLineProductOrderStep(LineProductOrderStep.ORDER_CONFIRMED);
+        itemEntity.setCreateDate(LocalDateTime.now());
+        itemEntity.setUserId(postbackEvent.getSource().getUserId());
+
+        lineReservationItemRepository.save(itemEntity);
+
+        lineReservationEntity.setReservationCompleted(true);
+
+        lineReservationRepository.save(lineReservationEntity);
+
+        OrderRequest orderRequest = new OrderRequest();
+
+        orderRequest.setOrderFrom(OrderFrom.LINE);
+        orderRequest.setLineReservationId(reservationId);
+        orderRequest.setShippingAddress(lineReservationEntity.getShippingAddress());
+        orderRequest.setLineReservationId(lineReservationEntity.getId());
+        orderRequest.setCustomerId(getCustomer(client, lineReservationEntity.getUserId()));
+
+        OrderItemRequest itemRequest = OrderItemRequest.builder()
+                .orderQuantity(lineReservationEntity.getOrderQuantity())
+                .productPrice(lineReservationEntity.getProduct().getPrice())
+                .productId(lineReservationEntity.getProduct().getId()).build();
+
+        orderRequest.setItemRequests(List.of(itemRequest));
+
+        orderService.create(orderRequest);
     }
 
     /**
@@ -339,6 +320,40 @@ public class LineService {
         }
     }
 
+    private void placeOrder(
+            LineMessagingClient client,
+            PostbackEvent postbackEvent
+    ) {
+        String[] postbackItems = postbackEvent.getPostbackContent().getData().split("&");
+        Long reservationId = Long.valueOf(postbackItems[1].replace("reservationId=", ""));
+        Long productId = Long.valueOf(postbackItems[2].replace("productId=", ""));
+
+        sendReplyTextMessage(
+                client,
+                "Enter order quantity",
+                postbackEvent.getReplyToken()
+        );
+
+        LineReservationItemEntity itemEntity = new LineReservationItemEntity();
+
+        LineReservationEntity lineReservationEntity = lineReservationRepository.getReferenceById(reservationId);
+
+        lineReservationEntity.setProduct(productService.getProductEntity(productId));
+
+        lineReservationRepository.save(lineReservationEntity);
+
+        itemEntity.setReservation(lineReservationRepository.getReferenceById(reservationId));
+        itemEntity.setLineMessageId(postbackEvent.getWebhookEventId());
+        itemEntity.setLineEventType(LineEventType.POSTBACK);
+        itemEntity.setLineTextMessage(postbackEvent.getPostbackContent().getData());
+        itemEntity.setLineProductOrderStep(LineProductOrderStep.PRODUCT_SELECTED);
+        itemEntity.setCreateDate(LocalDateTime.now());
+        itemEntity.setUserId(postbackEvent.getSource().getUserId());
+
+        lineReservationItemRepository.save(itemEntity);
+
+
+    }
 
     /**
      * LINE: Send Reply Text Message
@@ -359,6 +374,49 @@ public class LineService {
         } catch (Exception e) {
             throw new WebhookParseException("Exception: ");
         }
+
+    }
+
+    private void createNewOrder(LineMessagingClient client, PostbackEvent event, String botUserId) {
+        try {
+            LineReservationEntity lineReservation = new LineReservationEntity();
+
+            lineReservation.setCreateDate(LocalDateTime.now());
+            lineReservation.setBotUserId(botUserId);
+            lineReservation.setReservationCompleted(false);
+            lineReservation.setUserId(event.getSource().getUserId());
+
+            Long reservationId = lineReservationRepository.saveAndFlush(lineReservation).getId();
+
+            sendReplyFlexMessage(client, ((PostbackEvent) event).getReplyToken(),
+                    prepareProductListMessage(reservationId)
+            );
+
+        } catch (Exception e) {
+            log.error("PostbackEvent for create new Order. ", e);
+        }
+    }
+
+    private Long getCustomer(LineMessagingClient client, String lineUserId) {
+        CustomerEntity customer = customerService.getCustomerEntity(lineUserId);
+
+        try {
+            if (ObjectUtils.isEmpty(customer)) {
+                CustomerRequest customerRequest = new CustomerRequest();
+
+                UserProfileResponse userProfileResponse = client.getProfile(lineUserId).get();
+
+                customerRequest.setName(userProfileResponse.getDisplayName());
+                customerRequest.setLineUserId(userProfileResponse.getUserId());
+                customerRequest.setUserFrom(UserFrom.LINE);
+
+                customer = customerService.getCustomerEntity(customerService.create(customerRequest));
+            }
+            return customer.getId();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new WebhookParseException("Line user get profile exception");
+        }
+
 
     }
 
@@ -499,43 +557,28 @@ public class LineService {
 
     private FlexMessage prepareReceiptForLineOrder(LineReservationEntity lineReservationEntity) {
 
-        List<LineReservationItemEntity> itemEntities = lineReservationEntity.getLineReservationItems()
-                .stream().filter(entity -> entity.getProduct() != null).toList();
 
         List<FlexComponent> productBoxes = new ArrayList<>();
 
-        LineReservationItemEntity itemEntity = lineReservationItemRepository
-                .findByReservation_IdAndLineProductOrderStep(lineReservationEntity.getId(),
-                        LineProductOrderStep.ORDER_QUANTITY_PROVIDED);
+        Text productTitle = Text.builder()
+                .text("1. " + lineReservationEntity.getProduct().getTitle())
+                .flex(4)
+                .size(FlexFontSize.SM)
+                .color("#555555")
+                .build();
 
-        int orderQuantity = itemEntity.getOrderQuantity();
+        Text productPrice = Text.builder()
+                .text("৳ " + lineReservationEntity.getProduct().getPrice())
+                .size(FlexFontSize.SM)
+                .flex(2)
+                .color("#111111")
+                .align(FlexAlign.END)
+                .build();
 
-        AtomicReference<BigDecimal> productRate = new AtomicReference<>(BigDecimal.ZERO);
-
-        itemEntities.forEach(entity -> {
-
-            productRate.set(entity.getProduct().getPrice());
-
-            Text productTitle = Text.builder()
-                    .text("1. " + entity.getProduct().getTitle())
-                    .flex(4)
-                    .size(FlexFontSize.SM)
-                    .color("#555555")
-                    .build();
-
-            Text productPrice = Text.builder()
-                    .text("৳ " + entity.getProduct().getPrice())
-                    .size(FlexFontSize.SM)
-                    .flex(2)
-                    .color("#111111")
-                    .align(FlexAlign.END)
-                    .build();
-
-            productBoxes.add(Box.builder()
-                    .layout(FlexLayout.HORIZONTAL)
-                    .contents(productTitle, productPrice)
-                    .build());
-        });
+        productBoxes.add(Box.builder()
+                .layout(FlexLayout.HORIZONTAL)
+                .contents(productTitle, productPrice)
+                .build());
 
         Text receiptText = Text.builder()
                 .text("Order Summary")
@@ -546,7 +589,7 @@ public class LineService {
 
 
         Text orderNoText = Text.builder()
-                .text("#743289384279")
+                .text("#" + lineReservationEntity.getId())
                 .size(FlexFontSize.XS)
                 .color("#aaaaaa")
                 .weight(Text.TextWeight.BOLD)
@@ -578,7 +621,7 @@ public class LineService {
                 .build();
 
         Text itemsCount = Text.builder()
-                .text(String.valueOf(orderQuantity))
+                .text(String.valueOf(lineReservationEntity.getOrderQuantity()))
                 .size(FlexFontSize.SM)
                 .color("#111111")
                 .align(FlexAlign.END)
@@ -595,7 +638,8 @@ public class LineService {
                 .build();
 
         Text totalCount = Text.builder()
-                .text("৳ " + BigDecimal.valueOf(orderQuantity).multiply(productRate.get()))
+                .text("৳ " + BigDecimal.valueOf(lineReservationEntity.getOrderQuantity())
+                        .multiply(lineReservationEntity.getProduct().getPrice()))
                 .size(FlexFontSize.SM)
                 .color("#111111")
                 .align(FlexAlign.END)
@@ -610,9 +654,10 @@ public class LineService {
                 .color("#555555")
                 .build();
 
+        System.out.println("lineReservationEntity.getShippingAddress()");
         Text shippingAddress = Text.builder()
                 .size(FlexFontSize.SM)
-                .text("Dhaka, Bangladesh")
+                .text(lineReservationEntity.getShippingAddress())
                 .color("#111111")
                 .wrap(true)
                 .build();

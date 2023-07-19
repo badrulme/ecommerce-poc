@@ -9,11 +9,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
+import java.util.List;
 
 @Entity
 @Getter
@@ -28,24 +29,22 @@ public class OrderEntity {
     @Column(length = 50, nullable = false, unique = true)
     private String code;
 
-    private Long productId;
-
-    private BigDecimal amount;
-
-    private Integer quantity;
-
     @Enumerated(EnumType.STRING)
     private OrderFrom orderFrom;
-
-    private String lineUserId;
 
     @ManyToOne
     private LineReservationEntity lineReservation;
 
-    private String customerName;
+    @ManyToOne(optional = false)
+    private CustomerEntity customer;
 
     @Column(length = 30)
     private String contactNo;
+
+    private String shippingAddress;
+
+    @OneToMany(mappedBy = "order")
+    private List<OrderItemEntity> orderItems;
 
 
 }
