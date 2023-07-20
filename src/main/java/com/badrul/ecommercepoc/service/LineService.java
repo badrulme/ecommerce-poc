@@ -73,7 +73,7 @@ public class LineService {
     public static final String REVIEW_GOLD_STAR = "https://scdn.line-apps.com/n/channel_devcenter/img/fx/review_gold_star_28.png";
     public static final String REVIEW_GRAY_STAR = "https://scdn.line-apps.com/n/channel_devcenter/img/fx/review_gray_star_28.png";
 
-    public static final String STORE_NAME = "Jashore Boro Bazar";
+    public static final String STORE_NAME = "ChatBot Commerce Shop";
     public static final String STORE_LOCATION = "Temporary House, L-1 Kazipur, Jashore";
 
     private final HttpServletRequest request;
